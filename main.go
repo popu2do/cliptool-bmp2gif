@@ -15,37 +15,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 	"unsafe"
 
-	// 图片格式支持
-	_ "image/jpeg"
-	_ "image/png"
-	_ "github.com/jsummers/gobmp" // 支持1/4/8/16/24/32位BMP及RLE压缩
-
-	// 第三方库
 	"github.com/nfnt/resize"
 	"golang.org/x/sys/windows"
 )
 
 const (
-	pollInterval  = 300    // 剪贴板轮询间隔(ms)
-	gifDelay      = 50     // GIF帧延迟(10ms为单位, 50=500ms)
-	minImages     = 2      // 最少图片数
-	maxRetries    = 3      // 剪贴板访问重试次数
-	margin        = 10     // 帧间距(px)
-	tempDir       = "temp" // 临时文件目录
-	maxPathLength = 32767  // Windows路径长度上限
-	cfHDrop       = 15     // Windows剪贴板文件格式常量
+	pollInterval    = 300    // 剪贴板轮询间隔(ms)
+	gifDelay        = 50     // GIF帧延迟(10ms为单位, 50=500ms)
+	minImages       = 2      // 最少图片数
+	maxRetries      = 3      // 剪贴板访问重试次数
+	thumbMargin     = 1      // 拼接图之间的间距(px)
+	separatorMargin = 10     // 拼接图与动图之间的间距(px)
+	tempDir         = "temp" // 临时文件目录
+	maxPathLength   = 32767  // Windows路径长度上限
+	cfHDrop         = 15     // Windows剪贴板文件格式常量
 )
-
-var supportedImageFormats = map[string]bool{
-	".bmp":  true,
-	".png":  true,
-	".jpg":  true,
-	".jpeg": true,
-}
 
 var (
 	user32           = windows.NewLazySystemDLL("user32.dll")
@@ -133,8 +120,7 @@ func getClipboardFiles() (imageFiles []string, contentHash string) {
 		dragQueryFileW.Call(hdropHandle, uintptr(fileIndex), uintptr(unsafe.Pointer(&pathBuffer[0])), uintptr(len(pathBuffer)))
 
 		filePath := windows.UTF16ToString(pathBuffer)
-		fileExt := strings.ToLower(filepath.Ext(filePath))
-		if supportedImageFormats[fileExt] {
+		if IsSupportedImage(filePath) {
 			imageFiles = append(imageFiles, filePath)
 		}
 	}
@@ -195,17 +181,9 @@ func loadImages(files []string) ([]image.Image, error) {
 	var images []image.Image
 
 	for _, filePath := range files {
-		file, err := os.Open(filePath)
+		img, format, err := LoadImage(filePath)
 		if err != nil {
 			fmt.Printf("  ⚠ 跳过: %s (%v)\n", filepath.Base(filePath), err)
-			continue
-		}
-
-		img, format, err := image.Decode(file)
-		file.Close()
-
-		if err != nil {
-			fmt.Printf("  ⚠ 跳过: %s (解码失败)\n", filepath.Base(filePath))
 			continue
 		}
 
@@ -231,8 +209,8 @@ func createFrames(sourceImages []image.Image) []image.Image {
 		resizedImages[i] = resize.Resize(uint(standardWidth), uint(standardHeight), img, resize.Bilinear)
 	}
 
-	totalColumns := len(sourceImages) + 1
-	canvasWidth := standardWidth*totalColumns + margin*(totalColumns-1)
+	thumbCount := len(sourceImages)
+	canvasWidth := thumbCount*standardWidth + (thumbCount-1)*thumbMargin + separatorMargin + standardWidth
 	canvasHeight := standardHeight
 
 	frames := make([]image.Image, len(sourceImages))
@@ -241,12 +219,12 @@ func createFrames(sourceImages []image.Image) []image.Image {
 		draw.Draw(canvas, canvas.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
 
 		for thumbIndex := 0; thumbIndex < len(resizedImages); thumbIndex++ {
-			xPosition := thumbIndex * (standardWidth + margin)
+			xPosition := thumbIndex * (standardWidth + thumbMargin)
 			targetRect := image.Rect(xPosition, 0, xPosition+standardWidth, standardHeight)
 			draw.Draw(canvas, targetRect, resizedImages[thumbIndex], image.Point{}, draw.Src)
 		}
 
-		rightXPosition := (totalColumns - 1) * (standardWidth + margin)
+		rightXPosition := thumbCount*standardWidth + (thumbCount-1)*thumbMargin + separatorMargin
 		rightTargetRect := image.Rect(rightXPosition, 0, rightXPosition+standardWidth, standardHeight)
 		draw.Draw(canvas, rightTargetRect, resizedImages[frameIndex], image.Point{}, draw.Src)
 
