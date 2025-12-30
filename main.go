@@ -19,6 +19,9 @@ import (
 	"unsafe"
 
 	"github.com/nfnt/resize"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 	"golang.org/x/sys/windows"
 )
 
@@ -194,7 +197,7 @@ func loadImages(files []string) ([]image.Image, error) {
 	return images, nil
 }
 
-// 布局: [所有缩略图] + [当前帧]
+// 布局: [所有缩略图] + [当前帧+序号]
 func createFrames(sourceImages []image.Image) []image.Image {
 	if len(sourceImages) == 0 {
 		return nil
@@ -227,6 +230,23 @@ func createFrames(sourceImages []image.Image) []image.Image {
 		rightXPosition := thumbCount*standardWidth + (thumbCount-1)*thumbMargin + separatorMargin
 		rightTargetRect := image.Rect(rightXPosition, 0, rightXPosition+standardWidth, standardHeight)
 		draw.Draw(canvas, rightTargetRect, resizedImages[frameIndex], image.Point{}, draw.Src)
+
+		// 右上角绘制红色帧序号
+		frameNumber := fmt.Sprintf("%d", frameIndex+1)
+		textColor := image.NewUniform(color.RGBA{R: 255, G: 0, B: 0, A: 255})
+
+		// 偏移绘制实现加粗
+		for dx := 0; dx <= 1; dx++ {
+			for dy := 0; dy <= 1; dy++ {
+				drawer := &font.Drawer{
+					Dst:  canvas,
+					Src:  textColor,
+					Face: basicfont.Face7x13,
+					Dot:  fixed.P(rightXPosition+standardWidth-25+dx, 15+dy),
+				}
+				drawer.DrawString(frameNumber)
+			}
+		}
 
 		frames[frameIndex] = canvas
 	}
