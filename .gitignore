@@ -1,22 +1,28 @@
-# 可执行文件
+# Executables
 *.exe
 
-# 临时文件
+# Temporary files
 temp/
 *.tmp
 test-img/
 
-# Go 编译产物
+# Build artifacts
 *.test
 *.out
+build/
 
-# IDE 配置
+# Frontend dependencies
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/keep.txt
+
+# IDE settings
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS 文件
+# OS files
 .DS_Store
 Thumbs.db
