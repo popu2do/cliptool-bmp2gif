@@ -1,72 +1,122 @@
-# ClipTool - 剪贴板图片转GIF工具
+# ClipTool BMP to GIF
 
-自动监听剪贴板，将多张图片合成为GIF动画。
+ClipTool is a Windows desktop utility for building GIFs from images copied in File Explorer. It listens to the Windows clipboard, collects supported image files into a small Wails GUI, lets the user reorder frames, and writes the generated GIF back to the clipboard for direct paste.
 
-## 功能特性
+The primary workflow is:
 
-- **自动监听**: 实时检测剪贴板图片变化
-- **多图合成**: 支持 2 张及以上图片自动生成 GIF
-- **格式支持**: BMP (1/4/8/16/24/32位) / PNG / JPG
-- **动画预览**: 左侧显示所有帧，右侧循环播放
+```text
+File Explorer Ctrl+C -> ClipTool collects frames -> reorder/adjust interval -> Generate GIF -> target app Ctrl+V
+```
 
-## 快速开始
+## Features
 
-### 运行程序
+- Collects image files from the Windows clipboard.
+- Supports repeated copy operations with append-only collection.
+- Deduplicates frames by normalized file path.
+- Supports drag-and-drop frame ordering.
+- Supports single-frame removal and clearing the current batch.
+- Generates GIFs directly to the clipboard.
+- Keeps the original comparison layout: all thumbnails on the left, current frame on the right.
+- Provides a compact Wails + Svelte desktop UI.
+
+## Supported Inputs
+
+- BMP
+- PNG
+- JPG / JPEG
+- RAW fingerprint image: `43808` bytes, `148x148`, `uint16`, 12-bit source
+- BIN fingerprint image: `102400` bytes, `160x160`, `uint32`, 16-bit source
+
+## Requirements
+
+Runtime:
+
+- Windows
+- Microsoft Edge WebView2 Runtime
+- PowerShell, used to write the generated GIF path back to the clipboard
+
+Development:
+
+- Go 1.24+
+- Node.js and npm
+- Wails v2.12.0, optional as a global command because `build.bat` can run the pinned version through `go run`
+
+## Quick Start
+
+Run `cliptool.exe`, then:
+
+1. Select one or more supported images in Windows File Explorer.
+2. Press `Ctrl+C`.
+3. Review the thumbnails in ClipTool.
+4. Drag thumbnails to adjust frame order.
+5. Set `Gif图片间隔时间` if needed.
+6. Click `生成 GIF / Enter`, or press Enter.
+7. Paste the generated GIF into the target app with `Ctrl+V`.
+
+After successful generation, the current frame list is cleared. Clicking `清空` also clears the current batch and ignores the current clipboard contents until the user copies again.
+
+## Development
+
+Install frontend dependencies:
+
 ```bash
-.\cliptool.exe
+cd frontend
+npm install
 ```
-或直接双击运行
 
-### 使用流程
-1. 启动程序，开始监听剪贴板
-2. 复制 2 张或更多图片
-3. 程序自动生成 GIF 并写入剪贴板
-4. 直接粘贴使用
+Run Go tests:
 
-## 技术实现
-
-### 核心依赖
-- `github.com/jsummers/gobmp` - 完整 BMP 格式支持（包括 4 位工业 BMP）
-- `github.com/nfnt/resize` - 高性能图片缩放
-- `golang.org/x/sys/windows` - Windows 剪贴板 API
-
-### 关键优化
-- Bilinear 插值快速缩放
-- 无抖动量化（draw.Src）提升 GIF 编码性能
-- 256 色自适应调色板（216 色 RGB + 40 级灰度）
-
-## 开发
-
-### 编译
 ```bash
-.\build.bat
+go test ./...
 ```
-或手动编译：
+
+Run frontend tests:
+
 ```bash
-go build -ldflags="-s -w" -o cliptool.exe main.go
+cd frontend
+npm test
 ```
 
-### 配置
-修改 `main.go` 中的常量：
-```go
-const (
-    pollInterval  = 300    // 剪贴板轮询间隔(ms)
-    gifDelay      = 50     // GIF帧延迟(10ms单位, 50=500ms)
-    minImages     = 2      // 最少图片数
-    margin        = 10     // 帧间距(px)
-)
+Build the frontend:
+
+```bash
+cd frontend
+npm run build
 ```
 
-## 项目结构
+Build the Windows executable:
 
+```bash
+build.bat
 ```
-cliptool-go/
-├── main.go      # 主程序源码
-├── build.bat    # 编译脚本
-├── go.mod       # Go 模块配置
-└── README.md    # 项目文档
+
+The build output is copied to `cliptool.exe`.
+
+## Project Structure
+
+```text
+internal/core       Image loading, thumbnails, GIF layout and encoding
+internal/clipboard  Windows clipboard read/write integration
+internal/session    Frame collection, deduplication, deletion and ordering
+frontend            Wails + Svelte UI
+docs                User-facing wiki docs and design specs
 ```
+
+## Documentation
+
+- [Docs index](docs/index.md)
+- [User guide](docs/cliptool-bmp2gif-user-guide.md)
+- [Launcher integration](docs/launcher-integration.md)
+- [GUI requirements spec](docs/spec/cliptool-bmp2gif-gui-spec.md)
+
+## Notes
+
+- This is not a general-purpose GIF editor.
+- It does not crop, annotate, draw on images, or save project history.
+- The first release is Windows-only.
+- The generated GIF is written through a temporary file under `temp/`.
 
 ## License
 
-MIT
+License file is not included yet. Add a repository-level `LICENSE` before public distribution.
+
