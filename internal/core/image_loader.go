@@ -1,10 +1,11 @@
-package main
+package core
 
 import (
 	"encoding/binary"
 	"fmt"
 	"image"
 	"os"
+	"path/filepath"
 	"strings"
 
 	_ "image/jpeg"
@@ -13,9 +14,21 @@ import (
 	_ "github.com/jsummers/gobmp"
 )
 
-// ============================================================
-// 标准图片格式 - 按后缀识别
-// ============================================================
+type LoadedImage struct {
+	Image  image.Image
+	Path   string
+	Name   string
+	Format string
+	Width  int
+	Height int
+}
+
+type rawDataProfile struct {
+	name          string
+	width, height int
+	dtype         string
+	bits          int
+}
 
 var standardImageExts = map[string]bool{
 	".bmp":  true,
@@ -24,14 +37,50 @@ var standardImageExts = map[string]bool{
 	".jpeg": true,
 }
 
-func isStandardImage(filePath string) bool {
-	ext := strings.ToLower(filePath)
-	for e := range standardImageExts {
-		if strings.HasSuffix(ext, e) {
-			return true
-		}
+var rawDataProfiles = map[int64]rawDataProfile{
+	43808:  {"RAW", 148, 148, "uint16", 12},
+	102400: {"BIN", 160, 160, "uint32", 16},
+}
+
+func IsSupportedImage(filePath string) bool {
+	return isStandardImage(filePath) || isRawDataImage(filePath)
+}
+
+func LoadImage(filePath string) (image.Image, string, error) {
+	if isRawDataImage(filePath) {
+		return loadRawDataImage(filePath)
 	}
-	return false
+	return loadStandardImage(filePath)
+}
+
+func LoadImages(files []string) ([]LoadedImage, error) {
+	images := make([]LoadedImage, 0, len(files))
+	for _, filePath := range files {
+		img, format, err := LoadImage(filePath)
+		if err != nil {
+			continue
+		}
+
+		bounds := img.Bounds()
+		images = append(images, LoadedImage{
+			Image:  img,
+			Path:   filePath,
+			Name:   filepath.Base(filePath),
+			Format: format,
+			Width:  bounds.Dx(),
+			Height: bounds.Dy(),
+		})
+	}
+
+	if len(images) < MinImages {
+		return images, fmt.Errorf("有效图片不足 %d 张（实际: %d）", MinImages, len(images))
+	}
+	return images, nil
+}
+
+func isStandardImage(filePath string) bool {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	return standardImageExts[ext]
 }
 
 func loadStandardImage(filePath string) (image.Image, string, error) {
@@ -41,22 +90,6 @@ func loadStandardImage(filePath string) (image.Image, string, error) {
 	}
 	defer file.Close()
 	return image.Decode(file)
-}
-
-// ============================================================
-// 原始数据图 - 按文件大小识别 (RAW/BIN 指纹图)
-// ============================================================
-
-type rawDataProfile struct {
-	name          string
-	width, height int
-	dtype         string // "uint16" or "uint32"
-	bits          int
-}
-
-var rawDataProfiles = map[int64]rawDataProfile{
-	43808:  {"RAW", 148, 148, "uint16", 12},
-	102400: {"BIN", 160, 160, "uint32", 16},
 }
 
 func isRawDataImage(filePath string) bool {
@@ -99,19 +132,4 @@ func loadRawDataImage(filePath string) (image.Image, string, error) {
 
 	format := fmt.Sprintf("%s/%dx%d", profile.name, profile.width, profile.height)
 	return img, format, nil
-}
-
-// ============================================================
-// 统一入口
-// ============================================================
-
-func IsSupportedImage(filePath string) bool {
-	return isStandardImage(filePath) || isRawDataImage(filePath)
-}
-
-func LoadImage(filePath string) (image.Image, string, error) {
-	if isRawDataImage(filePath) {
-		return loadRawDataImage(filePath)
-	}
-	return loadStandardImage(filePath)
 }
