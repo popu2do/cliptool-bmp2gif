@@ -7,6 +7,8 @@ import (
 	"image"
 	"image/png"
 
+	"cliptool/internal/applog"
+
 	"github.com/nfnt/resize"
 )
 
@@ -26,9 +28,11 @@ func ThumbnailDataURL(img image.Image) (string, error) {
 
 	buffer := new(bytes.Buffer)
 	if err := png.Encode(buffer, thumb); err != nil {
+		applog.Errorf("生成缩略图失败: sourceWidth=%d sourceHeight=%d err=%v", width, height, err)
 		return "", fmt.Errorf("生成缩略图失败: %v", err)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(buffer.Bytes())
+	applog.Debugf("生成缩略图成功: sourceWidth=%d sourceHeight=%d bytes=%d", width, height, buffer.Len())
 	return "data:image/png;base64," + encoded, nil
 }

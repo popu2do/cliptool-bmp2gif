@@ -106,7 +106,6 @@ docs                User-facing wiki docs and design specs
 
 - [Docs index](docs/index.md)
 - [User guide](docs/cliptool-bmp2gif-user-guide.md)
-- [Launcher integration](docs/launcher-integration.md)
 - [GUI requirements spec](docs/spec/cliptool-bmp2gif-gui-spec.md)
 
 ## Notes
@@ -119,4 +118,3 @@ docs                User-facing wiki docs and design specs
 ## License
 
 License file is not included yet. Add a repository-level `LICENSE` before public distribution.
-

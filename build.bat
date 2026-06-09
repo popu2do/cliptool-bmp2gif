@@ -37,6 +37,7 @@ if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 
 if exist build\bin\cliptool.exe (
     copy /Y build\bin\cliptool.exe cliptool.exe >nul
+    copy /Y build\bin\cliptool.exe ..\..\cliptool.exe >nul
     echo.
     echo [SUCCESS] cliptool.exe
     for %%A in (cliptool.exe) do echo File size: %%~zA bytes

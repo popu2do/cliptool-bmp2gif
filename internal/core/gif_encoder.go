@@ -8,6 +8,8 @@ import (
 	"image/draw"
 	"image/gif"
 
+	"cliptool/internal/applog"
+
 	"github.com/nfnt/resize"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -20,8 +22,10 @@ const (
 )
 
 func EncodeFiles(files []string, options GifOptions) ([]byte, error) {
+	applog.Debugf("EncodeFiles 开始: files=%d delay=%d", len(files), options.Normalized().DelayMS)
 	loadedImages, err := LoadImages(files)
 	if err != nil {
+		applog.Errorf("EncodeFiles 读取图片失败: files=%d err=%v", len(files), err)
 		return nil, err
 	}
 
@@ -29,15 +33,18 @@ func EncodeFiles(files []string, options GifOptions) ([]byte, error) {
 	for _, loaded := range loadedImages {
 		images = append(images, loaded.Image)
 	}
+	applog.Debugf("EncodeFiles 图片读取完成: loaded=%d", len(images))
 	return EncodeImages(images, options)
 }
 
 func EncodeImages(sourceImages []image.Image, options GifOptions) ([]byte, error) {
 	if len(sourceImages) < MinImages {
+		applog.Warnf("EncodeImages 有效图片不足: images=%d min=%d", len(sourceImages), MinImages)
 		return nil, fmt.Errorf("有效图片不足 %d 张（实际: %d）", MinImages, len(sourceImages))
 	}
 
 	frames := createFrames(sourceImages)
+	applog.Debugf("GIF 帧创建完成: sourceImages=%d frames=%d", len(sourceImages), len(frames))
 	return encodeGIF(frames, options)
 }
 
@@ -96,6 +103,7 @@ func drawFrameNumber(canvas *image.RGBA, rightXPosition, standardWidth, frameNum
 
 func encodeGIF(frames []image.Image, options GifOptions) ([]byte, error) {
 	if len(frames) == 0 {
+		applog.Warnf("GIF 编码失败: 没有帧")
 		return nil, fmt.Errorf("没有帧可供编码")
 	}
 
@@ -106,6 +114,7 @@ func encodeGIF(frames []image.Image, options GifOptions) ([]byte, error) {
 
 	palette := generatePalette()
 	delayUnits := options.DelayUnits()
+	applog.Debugf("GIF 编码开始: frames=%d delayUnits=%d delayMS=%d", len(frames), delayUnits, options.Normalized().DelayMS)
 
 	for frameIndex, frame := range frames {
 		frameBounds := frame.Bounds()
@@ -120,9 +129,11 @@ func encodeGIF(frames []image.Image, options GifOptions) ([]byte, error) {
 
 	buffer := new(bytes.Buffer)
 	if err := gif.EncodeAll(buffer, animation); err != nil {
+		applog.Errorf("GIF 编码失败: frames=%d err=%v", len(frames), err)
 		return nil, fmt.Errorf("GIF 编码失败: %v", err)
 	}
 
+	applog.Debugf("GIF 编码完成: frames=%d bytes=%d", len(frames), buffer.Len())
 	return buffer.Bytes(), nil
 }
 

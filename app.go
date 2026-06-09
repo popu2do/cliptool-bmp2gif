@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"cliptool/internal/applog"
 	"cliptool/internal/clipboard"
 	"cliptool/internal/core"
 	"cliptool/internal/session"
@@ -33,10 +34,12 @@ func NewApp(store *session.FrameStore, clipboardService *clipboard.Service) *App
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	applog.Infof("Wails 启动完成，清理临时目录")
 	a.clipboard.ClearTempDirectory()
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	applog.Infof("程序关闭，清理临时目录")
 	a.clipboard.ClearTempDirectory()
 }
 
@@ -53,8 +56,11 @@ func (a *App) ScanClipboard() session.AddResult {
 		}
 	}
 
+	applog.Debugf("发现新的剪切板图片批次: paths=%d contentHash=%q lastHash=%q", len(paths), contentHash, a.lastClipboardHash)
 	a.lastClipboardHash = contentHash
-	return a.store.AddPaths(paths)
+	result := a.store.AddPaths(paths)
+	applog.Infof("追加剪切板图片完成: added=%d skipped=%d total=%d message=%q", result.Added, result.Skipped, len(result.Frames), result.Message)
+	return result
 }
 
 func (a *App) RemoveFrame(id string) []session.FrameItem {
@@ -66,13 +72,16 @@ func (a *App) ReorderFrames(ids []string) []session.FrameItem {
 }
 
 func (a *App) ClearFrames() {
+	applog.Infof("用户清空帧列表")
 	a.markCurrentClipboardAsSeen()
 	a.store.Clear()
 }
 
 func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 	paths := a.store.Paths()
+	applog.Infof("开始生成 GIF: frameCount=%d delay=%d", len(paths), options.DelayMS)
 	if len(paths) < core.MinImages {
+		applog.Warnf("生成 GIF 失败: 有效图片不足 frameCount=%d min=%d", len(paths), core.MinImages)
 		return GenerateResult{
 			OK:         false,
 			Message:    fmt.Sprintf("至少需要 %d 张图片", core.MinImages),
@@ -82,6 +91,7 @@ func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 
 	gifData, err := core.EncodeFiles(paths, options)
 	if err != nil {
+		applog.Errorf("生成 GIF 编码失败: %v", err)
 		return GenerateResult{
 			OK:         false,
 			Message:    err.Error(),
@@ -90,6 +100,7 @@ func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 	}
 
 	if err := a.clipboard.WriteGIF(gifData); err != nil {
+		applog.Errorf("写入 GIF 到剪切板失败: %v", err)
 		return GenerateResult{
 			OK:         false,
 			Message:    err.Error(),
@@ -101,6 +112,7 @@ func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 	currentClipboardHash := a.lastClipboardHash
 	a.store.Clear()
 	a.lastClipboardHash = currentClipboardHash
+	applog.Infof("生成 GIF 成功: frameCount=%d gifBytes=%d", frameCount, len(gifData))
 	return GenerateResult{
 		OK:         true,
 		Message:    "GIF 已复制到剪贴板",
@@ -111,6 +123,7 @@ func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 func (a *App) markCurrentClipboardAsSeen() {
 	_, contentHash := a.clipboard.ReadImageFiles()
 	a.lastClipboardHash = contentHash
+	applog.Debugf("标记当前剪切板为已处理: contentHash=%q", contentHash)
 }
 
 func (a *App) SetAlwaysOnTop(enabled bool) {

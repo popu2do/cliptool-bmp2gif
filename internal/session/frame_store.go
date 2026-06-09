@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"cliptool/internal/applog"
 	"cliptool/internal/core"
 )
 
@@ -61,29 +62,34 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	applog.Debugf("开始追加路径到帧列表: input=%d current=%d", len(paths), len(s.frames))
 	added := 0
 	skipped := 0
 
 	for _, rawPath := range paths {
 		normalizedPath, err := normalizePath(rawPath)
 		if err != nil {
+			applog.Warnf("跳过无法规范化的路径: rawPath=%q err=%v", rawPath, err)
 			skipped++
 			continue
 		}
 		key := seenKey(normalizedPath)
 		if _, exists := s.seen[key]; exists {
+			applog.Debugf("跳过重复图片: path=%q", normalizedPath)
 			skipped++
 			continue
 		}
 
 		img, format, err := core.LoadImage(normalizedPath)
 		if err != nil {
+			applog.Warnf("跳过读取失败图片: path=%q err=%v", normalizedPath, err)
 			skipped++
 			continue
 		}
 
 		thumbDataURL, err := core.ThumbnailDataURL(img)
 		if err != nil {
+			applog.Warnf("跳过缩略图生成失败图片: path=%q err=%v", normalizedPath, err)
 			skipped++
 			continue
 		}
@@ -100,8 +106,10 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 		})
 		s.seen[key] = struct{}{}
 		added++
+		applog.Debugf("已追加图片帧: path=%q format=%q width=%d height=%d id=%q", normalizedPath, format, bounds.Dx(), bounds.Dy(), pathID(normalizedPath))
 	}
 
+	applog.Debugf("追加路径到帧列表完成: added=%d skipped=%d total=%d", added, skipped, len(s.frames))
 	return AddResult{
 		Frames:  copyFrames(s.frames),
 		Added:   added,
