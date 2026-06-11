@@ -7,6 +7,8 @@ import (
 
 	"cliptool/internal/applog"
 	"cliptool/internal/clipboard"
+	"cliptool/internal/core"
+	"cliptool/internal/extensions/fingerprint"
 	"cliptool/internal/session"
 
 	"github.com/wailsapp/wails/v2"
@@ -29,6 +31,7 @@ func main() {
 	executablePath, _ := os.Executable()
 	applog.Infof("程序启动: exe=%q cwd=%q os=%s arch=%s args=%q log=%q", executablePath, workingDir, runtime.GOOS, runtime.GOARCH, os.Args, logPath)
 
+	core.RegisterImageLoader(fingerprint.NewLoader())
 	app := NewApp(session.NewFrameStore(), clipboard.NewService("temp"))
 
 	err = wails.Run(&options.App{
@@ -39,6 +42,10 @@ func main() {
 		MinHeight: 380,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
+		},
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop:     true,
+			DisableWebViewDrop: true,
 		},
 		BackgroundColour:   &options.RGBA{R: 246, G: 247, B: 249, A: 1},
 		Logger:             applog.NewWailsLogger(),

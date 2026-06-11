@@ -1,12 +1,12 @@
 package core
 
 import (
-	"encoding/binary"
 	"fmt"
 	"image"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"cliptool/internal/applog"
 
@@ -25,12 +25,16 @@ type LoadedImage struct {
 	Height int
 }
 
-type rawDataProfile struct {
-	name          string
-	width, height int
-	dtype         string
-	bits          int
+type ImageLoader interface {
+	Name() string
+	IsSupported(filePath string) bool
+	Load(filePath string) (image.Image, string, error)
 }
+
+var (
+	imageLoadersMu sync.RWMutex
+	imageLoaders   []ImageLoader
+)
 
 var standardImageExts = map[string]bool{
 	".bmp":  true,
@@ -39,22 +43,29 @@ var standardImageExts = map[string]bool{
 	".jpeg": true,
 }
 
-var rawDataProfiles = map[int64]rawDataProfile{
-	43808:  {"RAW", 148, 148, "uint16", 12},
-	102400: {"BIN", 160, 160, "uint32", 16},
+func RegisterImageLoader(loader ImageLoader) {
+	imageLoadersMu.Lock()
+	defer imageLoadersMu.Unlock()
+	imageLoaders = append(imageLoaders, loader)
+	applog.Debugf("注册图片扩展解析器: name=%q", loader.Name())
 }
 
 func IsSupportedImage(filePath string) bool {
-	return isStandardImage(filePath) || isRawDataImage(filePath)
+	return isStandardImage(filePath) || findExtensionLoader(filePath) != nil
 }
 
 func LoadImage(filePath string) (image.Image, string, error) {
-	if isRawDataImage(filePath) {
-		applog.Debugf("按原始指纹数据读取图片: path=%q", filePath)
-		return loadRawDataImage(filePath)
+	if isStandardImage(filePath) {
+		applog.Debugf("按标准图片格式读取图片: path=%q ext=%q", filePath, filepath.Ext(filePath))
+		return loadStandardImage(filePath)
 	}
-	applog.Debugf("按标准图片格式读取图片: path=%q ext=%q", filePath, filepath.Ext(filePath))
-	return loadStandardImage(filePath)
+
+	if loader := findExtensionLoader(filePath); loader != nil {
+		applog.Debugf("按扩展解析器读取图片: loader=%q path=%q", loader.Name(), filePath)
+		return loader.Load(filePath)
+	}
+
+	return nil, "", fmt.Errorf("不支持的图片格式或尺寸: %s", filepath.Base(filePath))
 }
 
 func LoadImages(files []string) ([]LoadedImage, error) {
@@ -115,49 +126,13 @@ func loadStandardImage(filePath string) (image.Image, string, error) {
 	return img, format, nil
 }
 
-func isRawDataImage(filePath string) bool {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return false
-	}
-	_, ok := rawDataProfiles[info.Size()]
-	return ok
-}
-
-func loadRawDataImage(filePath string) (image.Image, string, error) {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		applog.Errorf("原始指纹数据文件状态检查失败: path=%q err=%v", filePath, err)
-		return nil, "", err
-	}
-	applog.Debugf("原始指纹数据文件状态: path=%q size=%d modified=%s", filePath, info.Size(), info.ModTime().Format("2006-01-02T15:04:05.000Z07:00"))
-
-	profile, ok := rawDataProfiles[info.Size()]
-	if !ok {
-		applog.Warnf("未知原始指纹数据尺寸: path=%q size=%d", filePath, info.Size())
-		return nil, "", fmt.Errorf("unknown raw data size: %d", info.Size())
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		applog.Errorf("读取原始指纹数据失败: path=%q err=%v", filePath, err)
-		return nil, "", err
-	}
-
-	img := image.NewGray(image.Rect(0, 0, profile.width, profile.height))
-	pixelCount := profile.width * profile.height
-
-	for i := 0; i < pixelCount; i++ {
-		var rawValue uint32
-		if profile.dtype == "uint16" {
-			rawValue = uint32(binary.LittleEndian.Uint16(data[i*2:]))
-		} else {
-			rawValue = binary.LittleEndian.Uint32(data[i*4:])
+func findExtensionLoader(filePath string) ImageLoader {
+	imageLoadersMu.RLock()
+	defer imageLoadersMu.RUnlock()
+	for _, loader := range imageLoaders {
+		if loader.IsSupported(filePath) {
+			return loader
 		}
-		img.Pix[i] = uint8(rawValue >> (profile.bits - 8))
 	}
-
-	format := fmt.Sprintf("%s/%dx%d", profile.name, profile.width, profile.height)
-	applog.Debugf("原始指纹数据读取成功: path=%q format=%q bytes=%d", filePath, format, len(data))
-	return img, format, nil
+	return nil
 }

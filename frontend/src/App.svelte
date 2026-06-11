@@ -4,6 +4,7 @@
   import { dndzone } from 'svelte-dnd-action';
   import { Check, Copy, Pin, PinOff, RotateCcw, Shuffle, Trash2, X } from '@lucide/svelte';
   import {
+    AddDroppedFiles,
     ClearFrames,
     GenerateGIF,
     GetFrames,
@@ -12,9 +13,10 @@
     ScanClipboard,
     SetAlwaysOnTop,
   } from '../wailsjs/go/main/App';
+  import { OnFileDrop, OnFileDropOff } from '../wailsjs/runtime/runtime';
   import { frameIDs, normalizeFrames } from './frameModel';
 
-  const scanIntervalMS = 300;
+  const scanIntervalMS = 700;
   const flipDurationMS = 120;
 
   let frames = [];
@@ -24,7 +26,12 @@
   let generating = false;
   let dragging = false;
   let status = '监听中';
+  let statusError = false;
   let scanTimer;
+
+  function isGenericClipboardError(message) {
+    return message.startsWith('剪贴板里没有文件列表');
+  }
 
   function canGenerate() {
     return frames.length >= 2 && !generating;
@@ -40,13 +47,22 @@
   async function scanClipboard() {
     if (generating || dragging) return;
 
-    const result = await ScanClipboard();
-    frames = normalizeFrames(result.Frames);
-    if (result.Added > 0 || result.Skipped > 0) {
-      status = result.Message;
-    }
-    if (!frames.some((frame) => frame.id === selectedID)) {
-      selectedID = '';
+    try {
+      const result = await ScanClipboard();
+      frames = normalizeFrames(result.Frames);
+      if (result.Message && result.Message !== '监听中') {
+        if (statusError && result.Error && isGenericClipboardError(result.Message)) {
+          return;
+        }
+        status = result.Message;
+        statusError = Boolean(result.Error);
+      }
+      if (!frames.some((frame) => frame.id === selectedID)) {
+        selectedID = '';
+      }
+    } catch (error) {
+      status = `读取剪贴板失败：${String(error)}`;
+      statusError = true;
     }
   }
 
@@ -55,6 +71,7 @@
     frames = normalizeFrames(await RemoveFrame(selectedID));
     selectedID = '';
     status = '已删除选中图片';
+    statusError = false;
   }
 
   async function clearAll() {
@@ -63,6 +80,7 @@
     frames = [];
     selectedID = '';
     status = '已清空';
+    statusError = false;
   }
 
   async function reorderByIDs(ids) {
@@ -75,21 +93,25 @@
     );
     await reorderByIDs(frameIDs(nextFrames));
     status = '已按文件名排序';
+    statusError = false;
   }
 
   async function reverseOrder() {
     await reorderByIDs(frameIDs([...frames].reverse()));
     status = '已反转顺序';
+    statusError = false;
   }
 
   async function generateGIF() {
     if (!canGenerate()) return;
     generating = true;
     status = '生成中';
+    statusError = false;
 
     try {
       const result = await GenerateGIF({ DelayMS: Number(delayMS) });
       status = result.Message;
+      statusError = !result.OK;
       if (result.OK) {
         frames = [];
         selectedID = '';
@@ -98,6 +120,7 @@
       }
     } catch (error) {
       status = String(error);
+      statusError = true;
       await refreshFrames();
     } finally {
       generating = false;
@@ -108,6 +131,7 @@
     alwaysOnTop = !alwaysOnTop;
     await SetAlwaysOnTop(alwaysOnTop);
     status = alwaysOnTop ? '窗口已置顶' : '窗口取消置顶';
+    statusError = false;
   }
 
   function handleConsider(event) {
@@ -125,6 +149,34 @@
     }
   }
 
+  function isExternalFileDrag(event) {
+    return Array.from(event.dataTransfer?.types || []).includes('Files');
+  }
+
+  function preventExternalFileDrop(event) {
+    if (!isExternalFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  async function addDroppedFiles(paths) {
+    if (generating || !paths?.length) return;
+    dragging = false;
+    try {
+      const result = await AddDroppedFiles(paths);
+      frames = normalizeFrames(result.Frames);
+      status = result.Message;
+      statusError = Boolean(result.Error);
+      if (!frames.some((frame) => frame.id === selectedID)) {
+        selectedID = '';
+      }
+    } catch (error) {
+      status = `拖拽导入失败：${String(error)}`;
+      statusError = true;
+      await refreshFrames();
+    }
+  }
+
   function handleKeydown(event) {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -136,14 +188,22 @@
     }
   }
 
-  onMount(async () => {
-    await refreshFrames();
-    await SetAlwaysOnTop(alwaysOnTop);
+  onMount(() => {
+    refreshFrames();
+    SetAlwaysOnTop(alwaysOnTop);
     scanTimer = window.setInterval(scanClipboard, scanIntervalMS);
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('dragover', preventExternalFileDrop);
+    window.addEventListener('drop', preventExternalFileDrop);
+    OnFileDrop((_x, _y, paths) => {
+      addDroppedFiles(paths);
+    }, false);
     return () => {
       window.clearInterval(scanTimer);
       window.removeEventListener('keydown', handleKeydown);
+      window.removeEventListener('dragover', preventExternalFileDrop);
+      window.removeEventListener('drop', preventExternalFileDrop);
+      OnFileDropOff();
     };
   });
 </script>
@@ -235,6 +295,5 @@
     </div>
   </footer>
 
-  <div class="status-bar">{status}</div>
+  <div class:error={statusError} class="status-bar">{status}</div>
 </main>
-

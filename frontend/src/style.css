@@ -308,6 +308,12 @@ button:disabled {
   background: #f9fafb;
 }
 
+.status-bar.error {
+  border-top-color: #fecaca;
+  color: #b91c1c;
+  background: #fff1f2;
+}
+
 @media (max-width: 780px) {
   .control-panel {
     align-items: stretch;

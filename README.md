@@ -24,8 +24,36 @@ File Explorer Ctrl+C -> ClipTool collects frames -> reorder/adjust interval -> G
 - BMP
 - PNG
 - JPG / JPEG
+- RAW fingerprint image: `1560` bytes, `13x60`, `uint16`, 12-bit source
+- RAW fingerprint image: `4800` bytes, `24x100`, `uint16`, 12-bit source
+- RAW fingerprint image: `6240` bytes, `26x120` or `20x156`, `uint16`, 12-bit source
+- RAW fingerprint image: `8320` bytes, `26x160`, `uint16`, 12-bit source
+- RAW fingerprint image: `10240` bytes, `32x160`, `uint16`, 12-bit source
+- RAW fingerprint image: `39192` bytes, `138x142`, `uint16`, 10-bit source
 - RAW fingerprint image: `43808` bytes, `148x148`, `uint16`, 12-bit source
+- RAW fingerprint image: `51200` bytes, `160x160`, `uint16`, 10-bit or 12-bit source
+- RAW fingerprint image: `88200` bytes, `210x210`, `uint16`, 12-bit source
+- BIN fingerprint image: `9600` bytes, `24x100`, `uint32`, 16-bit source
+- BIN fingerprint image: `12480` bytes, `26x120` or `20x156`, `uint32`, 16-bit source
+- BIN fingerprint image: `16640` bytes, `26x160`, `uint32`, 16-bit source
+- BIN fingerprint image: `20480` bytes, `32x160`, `uint32`, 16-bit source
 - BIN fingerprint image: `102400` bytes, `160x160`, `uint32`, 16-bit source
+- BIN fingerprint image: `176400` bytes, `210x210`, `uint32`, 16-bit source
+
+Fingerprint RAW/BIN support is implemented as an extension loader under `internal/extensions/fingerprint`.
+The core image pipeline remains responsible for normal image loading, frame management, thumbnails, and GIF encoding.
+Encrypted business dumps are intentionally not built into this tool.
+
+## Clipboard Handling
+
+ClipTool reads File Explorer copies through the standard Windows file clipboard formats first:
+
+- `CF_HDROP`
+- `FileNameW` / `FileName`
+- OLE `IDataObject`
+
+For long local file paths where Explorer exposes file items through shell clipboard data but `CF_HDROP` cannot be materialized, ClipTool falls back to `Shell IDList Array` and resolves PIDLs with `SHGetNameFromIDList(SIGDN_FILESYSPATH)`.
+This keeps local Explorer copies working for long RAW/BIN sample paths without adding PowerShell polling or business-specific file copying behavior.
 
 ## Requirements
 

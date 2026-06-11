@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"cliptool/internal/applog"
 	"cliptool/internal/clipboard"
@@ -47,19 +48,71 @@ func (a *App) GetFrames() []session.FrameItem {
 	return a.store.Frames()
 }
 
+func (a *App) AddDroppedFiles(paths []string) session.AddResult {
+	applog.Infof("拖拽导入文件: count=%d", len(paths))
+	result := a.store.AddPaths(paths)
+	if result.Error {
+		applog.Warnf("拖拽导入部分失败: added=%d skipped=%d message=%q", result.Added, result.Skipped, result.Message)
+	} else {
+		applog.Infof("拖拽导入完成: added=%d skipped=%d total=%d message=%q", result.Added, result.Skipped, len(result.Frames), result.Message)
+	}
+	return result
+}
+
 func (a *App) ScanClipboard() session.AddResult {
-	paths, contentHash := a.clipboard.ReadImageFiles()
-	if contentHash == "" || contentHash == a.lastClipboardHash {
+	clipboardResult := a.clipboard.ReadImageFiles()
+	if clipboardResult.ContentHash == "" || clipboardResult.ContentHash == a.lastClipboardHash {
 		return session.AddResult{
 			Frames:  a.store.Frames(),
 			Message: "监听中",
 		}
 	}
 
-	applog.Debugf("发现新的剪切板图片批次: paths=%d contentHash=%q lastHash=%q", len(paths), contentHash, a.lastClipboardHash)
-	a.lastClipboardHash = contentHash
-	result := a.store.AddPaths(paths)
-	applog.Infof("追加剪切板图片完成: added=%d skipped=%d total=%d message=%q", result.Added, result.Skipped, len(result.Frames), result.Message)
+	applog.Debugf("发现新的剪切板图片批次: paths=%d unsupported=%d contentHash=%q lastHash=%q", len(clipboardResult.ImageFiles), len(clipboardResult.UnsupportedFiles), clipboardResult.ContentHash, a.lastClipboardHash)
+	a.lastClipboardHash = clipboardResult.ContentHash
+	if clipboardResult.ClipboardOpenFailed {
+		return session.AddResult{
+			Frames:  a.store.Frames(),
+			Message: "剪贴板正被其他程序占用，稍后会继续监听",
+			Error:   true,
+		}
+	}
+	if clipboardResult.FileListUnreadable {
+		return session.AddResult{
+			Frames:  a.store.Frames(),
+			Message: "剪贴板里有文件列表，但当前无法读取；请重新复制文件，或先用拖拽添加",
+			Error:   true,
+		}
+	}
+	if clipboardResult.NonFileContent {
+		return session.AddResult{
+			Frames:  a.store.Frames(),
+			Message: "剪贴板里没有文件列表，请在资源管理器里选中图片文件后复制",
+			Error:   true,
+		}
+	}
+	if len(clipboardResult.ImageFiles) == 0 {
+		if len(clipboardResult.UnsupportedFiles) == 0 {
+			return session.AddResult{
+				Frames:  a.store.Frames(),
+				Message: "监听中",
+			}
+		}
+		return session.AddResult{
+			Frames:      a.store.Frames(),
+			Unsupported: len(clipboardResult.UnsupportedFiles),
+			Message:     unsupportedMessage(clipboardResult.UnsupportedFiles),
+			Error:       len(clipboardResult.UnsupportedFiles) > 0,
+		}
+	}
+
+	result := a.store.AddPaths(clipboardResult.ImageFiles)
+	result.Unsupported = len(clipboardResult.UnsupportedFiles)
+	if result.Unsupported > 0 {
+		result.Message = fmt.Sprintf("%s；%d 项无法解析", result.Message, result.Unsupported)
+		result.Error = true
+	}
+	applog.Infof("追加剪切板图片完成: added=%d skipped=%d unsupported=%d total=%d message=%q", result.Added, result.Skipped, result.Unsupported, len(result.Frames), result.Message)
 	return result
 }
 
@@ -121,9 +174,31 @@ func (a *App) GenerateGIF(options core.GifOptions) GenerateResult {
 }
 
 func (a *App) markCurrentClipboardAsSeen() {
-	_, contentHash := a.clipboard.ReadImageFiles()
-	a.lastClipboardHash = contentHash
-	applog.Debugf("标记当前剪切板为已处理: contentHash=%q", contentHash)
+	result := a.clipboard.ReadImageFiles()
+	a.lastClipboardHash = result.ContentHash
+	applog.Debugf("标记当前剪切板为已处理: contentHash=%q", result.ContentHash)
+}
+
+func unsupportedMessage(files []clipboard.UnsupportedFile) string {
+	if len(files) == 0 {
+		return "未发现可用图片"
+	}
+
+	first := files[0]
+	name := first.Name
+	if name == "" {
+		name = filepath.Base(first.Path)
+	}
+	if first.IsDir {
+		if len(files) == 1 {
+			return fmt.Sprintf("复制到的是文件夹：%s，请进入文件夹后选中图片文件复制", name)
+		}
+		return fmt.Sprintf("无法解析 %d 项，包含文件夹 %s；请进入文件夹后选中图片文件复制", len(files), name)
+	}
+	if len(files) == 1 {
+		return fmt.Sprintf("无法解析：%s（%d 字节）", name, first.Size)
+	}
+	return fmt.Sprintf("无法解析 %d 个文件，例如 %s（%d 字节）", len(files), name, first.Size)
 }
 
 func (a *App) SetAlwaysOnTop(enabled bool) {

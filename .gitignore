@@ -20,6 +20,7 @@ frontend/dist/*
 # IDE settings
 .vscode/
 .idea/
+.serena/
 *.swp
 *.swo
 *~

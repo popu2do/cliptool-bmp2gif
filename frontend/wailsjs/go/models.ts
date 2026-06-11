@@ -66,7 +66,9 @@ export namespace session {
 	    Frames: FrameItem[];
 	    Added: number;
 	    Skipped: number;
+	    Unsupported: number;
 	    Message: string;
+	    Error: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AddResult(source);
@@ -77,7 +79,9 @@ export namespace session {
 	        this.Frames = this.convertValues(source["Frames"], FrameItem);
 	        this.Added = source["Added"];
 	        this.Skipped = source["Skipped"];
+	        this.Unsupported = source["Unsupported"];
 	        this.Message = source["Message"];
+	        this.Error = source["Error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

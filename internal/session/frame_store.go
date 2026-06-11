@@ -23,10 +23,12 @@ type FrameItem struct {
 }
 
 type AddResult struct {
-	Frames  []FrameItem
-	Added   int
-	Skipped int
-	Message string
+	Frames      []FrameItem
+	Added       int
+	Skipped     int
+	Unsupported int
+	Message     string
+	Error       bool
 }
 
 type FrameStore struct {
@@ -65,12 +67,14 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 	applog.Debugf("开始追加路径到帧列表: input=%d current=%d", len(paths), len(s.frames))
 	added := 0
 	skipped := 0
+	failed := 0
 
 	for _, rawPath := range paths {
 		normalizedPath, err := normalizePath(rawPath)
 		if err != nil {
 			applog.Warnf("跳过无法规范化的路径: rawPath=%q err=%v", rawPath, err)
 			skipped++
+			failed++
 			continue
 		}
 		key := seenKey(normalizedPath)
@@ -84,6 +88,7 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 		if err != nil {
 			applog.Warnf("跳过读取失败图片: path=%q err=%v", normalizedPath, err)
 			skipped++
+			failed++
 			continue
 		}
 
@@ -91,6 +96,7 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 		if err != nil {
 			applog.Warnf("跳过缩略图生成失败图片: path=%q err=%v", normalizedPath, err)
 			skipped++
+			failed++
 			continue
 		}
 
@@ -114,7 +120,8 @@ func (s *FrameStore) AddPaths(paths []string) AddResult {
 		Frames:  copyFrames(s.frames),
 		Added:   added,
 		Skipped: skipped,
-		Message: addMessage(added, skipped),
+		Message: addMessage(added, skipped, failed),
+		Error:   failed > 0,
 	}
 }
 
@@ -198,9 +205,12 @@ func copyFrames(frames []FrameItem) []FrameItem {
 	return copied
 }
 
-func addMessage(added, skipped int) string {
+func addMessage(added, skipped, failed int) string {
 	if added == 0 && skipped == 0 {
 		return "未发现可用图片"
+	}
+	if added == 0 && failed > 0 {
+		return fmt.Sprintf("图片读取失败，跳过 %d 项", failed)
 	}
 	if added == 0 {
 		return fmt.Sprintf("未追加新图片，跳过 %d 项", skipped)
